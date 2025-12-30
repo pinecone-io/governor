@@ -179,12 +179,10 @@ impl Gcra {
     /// Tests how many of `n` cells can be accommodated and updates the rate limiter
     /// to admit that many.
     ///
-    /// Unlike `test_n_all_and_update`, this never fails. It always returns the number
-    /// of cells that could be admitted, which may be 0 if none are available.
+    /// Returns `Ok((count, positive_outcome))` if at least one cell was admitted,
+    /// where `count` is the number of cells actually admitted (1 to n).
     ///
-    /// Returns a tuple of:
-    /// * The number of cells actually admitted, in the range of [0, n], inclusive
-    /// * The middleware's positive outcome
+    /// Returns `Err(negative_outcome)` if no cells could be admitted (rate limited).
     ///
     /// This method allows for "partial token vending" scenarios where you want to
     /// acquire as many tokens as possible.
@@ -200,7 +198,7 @@ impl Gcra {
         n: NonZeroU32,
         state: &S,
         t0: P,
-    ) -> (u32, MW::PositiveOutcome) {
+    ) -> Result<(u32, MW::PositiveOutcome), MW::NegativeOutcome> {
         let t0_nanos = t0.duration_since(start);
         let tau = self.tau;
         let t = self.t;
@@ -241,16 +239,25 @@ impl Gcra {
                     tat
                 };
 
-                Ok::<((u32, MW::PositiveOutcome), Nanos), core::convert::Infallible>((
+                let state_snapshot = StateSnapshot::new(self.t, self.tau, t0_nanos, next);
+
+                // Return Ok with count and positive outcome if we admitted cells,
+                // otherwise return Err with negative outcome (rate limited)
+                let result = if n_to_admit > 0 {
+                    Ok((n_to_admit, MW::allow(key, state_snapshot)))
+                } else {
+                    Err(MW::disallow(key, state_snapshot, start))
+                };
+
+                Ok::<
                     (
-                        n_to_admit,
-                        MW::allow(key, StateSnapshot::new(self.t, self.tau, t0_nanos, next)),
+                        Result<(u32, MW::PositiveOutcome), MW::NegativeOutcome>,
+                        Nanos,
                     ),
-                    next,
-                ))
+                    core::convert::Infallible,
+                >((result, next))
             })
-            // TODO(gtr): Kinda hacky, couldn't find a way around it
-            .expect("test_any_n_and_update: measure_and_replace should never return Err, only u32")
+            .expect("test_any_n_and_update: measure_and_replace should never return Err")
     }
 }
 
