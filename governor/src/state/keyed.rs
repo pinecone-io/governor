@@ -182,13 +182,13 @@ where
     /// Allow **up to** `n` cells through the rate limiter for the given key.
     ///
     /// This method attempts to allow `n` cells, but will allow fewer if the rate limit cannot
-    /// accommodate allow of them. It returns a tuple of:
-    /// * The number of cells actually allowed in the range [0, n], inclusive
-    /// * The middleware's positive outcome
+    /// accommodate all of them.
     ///
-    /// Unlike `check_n`, this method never fails. It always returns a result indicating how many
-    /// cells were allowed. This essentially means that 0 would be the equivalent of being rate
-    /// limited.
+    /// Returns `Ok((count, outcome))` if at least one cell was allowed, where `count` is the
+    /// number of cells actually allowed (1 to n).
+    ///
+    /// Returns `Err(NotUntil)` if no cells could be allowed (rate limited). The `NotUntil` value
+    /// indicates when at least one cell may be available.
     ///
     /// ### Example
     /// ```rust
@@ -198,14 +198,20 @@ where
     /// let limiter = RateLimiter::keyed(Quota::per_second(nonzero!(100u32)));
     ///
     /// // Try to get 50 tokens for "alice"
-    /// let (actual, _outcome) = limiter.check_key_any_n(&"alice", nonzero!(50u32));
-    /// println!("Got {} tokens for alice", actual);
+    /// match limiter.check_key_any_n(&"alice", nonzero!(50u32)) {
+    ///     Ok((actual, _outcome)) => println!("Got {actual} tokens for alice"),
+    ///     Err(_not_until) => println!("Rate limited, no tokens available for alice"),
+    /// }
     /// ```
     ///
     /// ### Performance
     /// Similar to `check_key_n`, this method uses multiplication to determine the
     /// theoretical arrival time and is not as fast as checking a single cell.
-    pub fn check_key_any_n(&self, key: &K, n: NonZeroU32) -> (u32, MW::PositiveOutcome) {
+    pub fn check_key_any_n(
+        &self,
+        key: &K,
+        n: NonZeroU32,
+    ) -> Result<(u32, MW::PositiveOutcome), MW::NegativeOutcome> {
         self.gcra.test_any_n_and_update::<K, C::Instant, S, MW>(
             self.start,
             key,
