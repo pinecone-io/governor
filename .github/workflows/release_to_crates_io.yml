@@ -16,7 +16,9 @@ jobs:
 
     runs-on: ubuntu-latest
     steps:
-      - run: echo merge commit is $GITHUB_SHA, from PR branch ${{ github.event.pull_request.head.ref }}
+      - env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: echo "merge commit is $GITHUB_SHA, from PR branch $HEAD_REF"
       - uses: actions-ecosystem/action-regex-match@v2
         id: version
         with:
